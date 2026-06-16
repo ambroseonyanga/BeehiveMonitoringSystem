@@ -25,13 +25,6 @@ unsigned long channelNumber = 3384879;
 const char* writeAPIKey = "HEHEZST627ICEU7E";
 String hiveNo = "12";
 
-// Field Mapping:
-// Field 1: Temperature
-// Field 2: Humidity  
-// Field 3: CO2
-// Field 4: Battery Voltage
-// Field 5: Audio Peak
-
 // ======================================================
 // THINGSPEAK TIMING - SEND EVERY 15 SECONDS
 // ======================================================
@@ -127,63 +120,254 @@ float lastTemp = 25.0;
 float lastHumidity = 50.0;
 float lastBatteryVoltage = 0.0;
 
-// ======================================================
-// BATCH BUFFER FOR SENSOR READINGS (Optional)
-// ======================================================
-// If you want to send an average of multiple readings,
-// uncomment and configure below
-/*
-#define BATCH_SIZE 15
-float tempBuffer[15];
-float humidityBuffer[15];
-uint16_t co2Buffer[15];
-float batteryBuffer[15];
-long audioBuffer[15];
-int bufferIndex = 0;
-*/
+
+const char INDEX_HTML[] PROGMEM = R"rawliteral(
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+
+<title>🐝 Smart Beehive Monitor</title>
+
+<style>
+*{
+    margin:0;
+    padding:0;
+    box-sizing:border-box;
+}
+
+body{
+    font-family:Arial,sans-serif;
+    background:linear-gradient(135deg,#fef3c7,#fde68a);
+    padding:20px;
+}
+
+.container{
+    max-width:900px;
+    margin:0 auto;
+}
+
+header{
+    background:#f59e0b;
+    color:white;
+    padding:20px;
+    border-radius:16px;
+    text-align:center;
+    margin-bottom:20px;
+}
+
+header h1{
+    margin-bottom:10px;
+}
+
+.grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
+    gap:15px;
+}
+
+.card{
+    background:white;
+    border-radius:16px;
+    padding:20px;
+    text-align:center;
+    box-shadow:0 4px 8px rgba(0,0,0,0.1);
+}
+
+.icon{
+    font-size:32px;
+}
+
+.value{
+    font-size:30px;
+    font-weight:bold;
+    margin:10px 0;
+    color:#222;
+}
+
+.label{
+    color:#666;
+    font-size:14px;
+}
+
+.status-bar{
+    display:flex;
+    flex-wrap:wrap;
+    justify-content:center;
+    gap:10px;
+    margin-top:20px;
+}
+
+.badge{
+    padding:8px 14px;
+    border-radius:20px;
+    color:white;
+    font-size:13px;
+    font-weight:bold;
+}
+
+.ok{
+    background:#10b981;
+}
+
+.err{
+    background:#ef4444;
+}
+
+.footer{
+    text-align:center;
+    margin-top:20px;
+    color:#555;
+    font-size:14px;
+}
+</style>
+</head>
+
+<body>
+
+<div class="container">
+
+<header>
+    <h1>🐝 Smart Beehive Monitor</h1>
+    <p>Live Hive Monitoring Dashboard</p>
+</header>
+
+<div class="grid">
+
+    <div class="card">
+        <div class="icon">🌡️</div>
+        <div id="temp" class="value">--</div>
+        <div class="label">Temperature (°C)</div>
+    </div>
+
+    <div class="card">
+        <div class="icon">💧</div>
+        <div id="hum" class="value">--</div>
+        <div class="label">Humidity (%)</div>
+    </div>
+
+    <div class="card">
+        <div class="icon">💨</div>
+        <div id="co2" class="value">--</div>
+        <div class="label">CO₂ (ppm)</div>
+    </div>
+
+    <div class="card">
+        <div class="icon">🔋</div>
+        <div id="battery" class="value">--</div>
+        <div class="label">Battery (V)</div>
+    </div>
+
+    <div class="card">
+        <div class="icon">⚡</div>
+        <div id="current" class="value">--</div>
+        <div class="label">Current (A)</div>
+    </div>
+
+    <div class="card">
+        <div class="icon">☀️</div>
+        <div id="solar" class="value">--</div>
+        <div class="label">Solar Power (W)</div>
+    </div>
+
+    <div class="card">
+        <div class="icon">🎤</div>
+        <div id="audio" class="value">--</div>
+        <div class="label">Audio Peak</div>
+    </div>
+
+</div>
+
+<div class="status-bar" id="statusBar"></div>
+
+<div class="footer">
+    Last Update: <span id="lastUpdated">--</span>
+</div>
+
+</div>
+
+<script>
+
+async function updateData()
+{
+    try
+    {
+        const response = await fetch('/data');
+        const data = await response.json();
+
+        document.getElementById("temp").innerHTML =
+            Number(data.temp).toFixed(1);
+
+        document.getElementById("hum").innerHTML =
+            Number(data.humidity).toFixed(1);
+
+        document.getElementById("co2").innerHTML =
+            data.co2;
+
+        document.getElementById("battery").innerHTML =
+            Number(data.battV).toFixed(2);
+
+        document.getElementById("current").innerHTML =
+            Number(data.battA).toFixed(3);
+
+        document.getElementById("solar").innerHTML =
+            Number(data.solW).toFixed(2);
+
+        document.getElementById("audio").innerHTML =
+            data.audio;
+
+        const statusBar =
+            document.getElementById("statusBar");
+
+        statusBar.innerHTML = "";
+
+        const sensors = [
+            ["CO₂", data.co2_ok],
+            ["Battery", data.batt_ok],
+            ["Solar", data.solar_ok],
+            ["Microphone", data.mic_ok],
+            ["SD Card", data.sd_ok],
+            ["Cloud", data.cloud_ok]
+        ];
+
+        sensors.forEach(sensor => {
+
+            const badge =
+                document.createElement("span");
+
+            badge.className =
+                "badge " +
+                (sensor[1] ? "ok" : "err");
+
+            badge.innerHTML =
+                (sensor[1] ? "✓ " : "✗ ") +
+                sensor[0];
+
+            statusBar.appendChild(badge);
+        });
+
+        document.getElementById("lastUpdated")
+            .innerHTML =
+            new Date().toLocaleTimeString();
+    }
+    catch(err)
+    {
+        console.log(err);
+    }
+}
+
+updateData();
+setInterval(updateData,2000);
+
+</script>
+
+</body>
+</html>
+)rawliteral";
 
 // ======================================================
 // WIFI CONNECT
-// ======================================================
-
-// void connectWiFi() {
-
-//     Serial.println();
-//     Serial.println("[WIFI]");
-
-//     WiFi.mode(WIFI_STA);
-//     WiFi.begin(ssid, password);
-
-//     Serial.print("Connecting");
-
-//     int retries = 0;
-
-//     while (WiFi.status() != WL_CONNECTED) {
-
-//         delay(500);
-//         Serial.print(".");
-//         retries++;
-
-//         if (retries >= 20) {
-//             Serial.println();
-//             Serial.println("Retrying WiFi...");
-//             WiFi.disconnect();
-//             delay(1000);
-//             WiFi.begin(ssid, password);
-//             retries = 0;
-//         }
-//     }
-
-//     Serial.println();
-//     Serial.println("WiFi Connected");
-//     Serial.print("IP Address: ");
-//     Serial.println(WiFi.localIP());
-
-//     digitalWrite(LED_PIN, HIGH);
-// }
-
-// ======================================================
-// WIFI CONNECT 2
 // ======================================================
 void connectWiFi()
 {
@@ -223,17 +407,6 @@ void connectWiFi()
     digitalWrite(LED_PIN, HIGH);
 }
 
-// ========================================================
-// Upload File to Server (HTTP POST with multipart/form-data)
-// ========================================================
-
-// bool uploadFileToServer(String filepath)
-// {
-//     if (!sd_ok)
-//         return false;
-
-//     if (WiFi.status() != WL_CONNECTED)
-//         return false;
 
 bool uploadFileToServer(String filepath)
 {
@@ -480,65 +653,6 @@ void ensureCSVExists()
 }
 
 
-// void logToCSV(float tempReading,
-//               float humidityReading,
-//               uint16_t co2Reading)
-// {
-//     if (!sd_ok)
-//         return;
-
-//     // Always ensure file exists
-//     ensureCSVExists();
-
-//     File file = SD.open("/10.csv", FILE_APPEND);
-
-//     if (!file)
-//     {
-//         Serial.println("Failed to open 10.csv");
-//         return;
-//     }
-
-//     // float temperature = 2.0 * tempReading * 2.0;
-//     float temperature = tempReading;
-//     // float humidity    = 2.0 * humidityReading * 2.0;
-//     float humidity    = humidityReading;
-
-//     float weight = 0.0;
-//     int gas = 0;
-
-//     struct tm timeinfo;
-//     char timestamp[25];
-
-//     if (getLocalTime(&timeinfo))
-//     {
-//         sprintf(timestamp,
-//                 "%04d-%02d-%02d %02d:%02d:%02d",
-//                 timeinfo.tm_year + 1900,
-//                 timeinfo.tm_mon + 1,
-//                 timeinfo.tm_mday,
-//                 timeinfo.tm_hour,
-//                 timeinfo.tm_min,
-//                 timeinfo.tm_sec);
-//     }
-//     else
-//     {
-//         strcpy(timestamp, "0000-00-00 00:00:00");
-//     }
-
-//     file.printf(
-//         "%s,%.2f,%.2f,\"%u\",%.2f,%d\n",
-//         timestamp,
-//         temperature,
-//         humidity,
-//         co2Reading,
-//         weight,
-//         gas
-//     );
-
-//     file.close();
-// }
-
-
 void logToCSV(float tempReading,
               float humidityReading,
               uint16_t co2Reading)
@@ -636,36 +750,6 @@ void setupTime() {
     Serial.println("Time Synced");
 }
 
-
-//=====================================================
-// GET LOCAL TIME ANOTHER METHOD
-//=====================================================
-
-// void setupTime()
-// {
-//     configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
-
-//     Serial.println();
-//     Serial.println("[TIME]");
-
-//     struct tm timeinfo;
-
-//     unsigned long startTime = millis();
-
-//     while (!getLocalTime(&timeinfo))
-//     {
-//         Serial.println("Waiting for NTP time...");
-//         delay(1000);
-
-//         if (millis() - startTime > 20000) // 20 seconds
-//         {
-//             Serial.println("NTP sync timeout");
-//             return;
-//         }
-//     }
-
-//     Serial.println("Time Synced");
-// }
 
 
 // ======================================================
@@ -881,30 +965,6 @@ void setupMicrophone() {
     Serial.println("MIC READY");
 }
 
-// ======================================================
-// SD CARD SETUP
-// ======================================================
-
-// void setupSDCard() {
-
-//     Serial.println();
-//     Serial.println("[SD CARD]");
-
-//     SPI.begin(SD_SCK, SD_MISO, SD_MOSI, SD_CS);
-
-//     if (!SD.begin(SD_CS, SPI, 4000000)) {
-//         Serial.println("FAILED");
-//         sd_ok = false;
-//         return;
-//     }
-
-//     sd_ok = true;
-//     Serial.println("READY");
-
-//     uint64_t cardSize = SD.cardSize() / (1024 * 1024);
-//     Serial.printf("Card Size: %llu MB\n", cardSize);
-// }
-
 void setupSDCard() {
 
     Serial.println();
@@ -1031,160 +1091,198 @@ bool recordAudio() {
 // ======================================================
 //DASHBOARD PAGE
 //=====================================================
+// void handleRoot()
+// {
+//     String html = R"rawliteral(
+// <!DOCTYPE html>
+// <html>
+// <head>
+// <meta name="viewport" content="width=device-width, initial-scale=1">
+
+// <title>Hive Monitor</title>
+
+// <style>
+
+// body{
+//     font-family:Arial;
+//     background:#f5f5f5;
+//     margin:0;
+//     padding:20px;
+// }
+
+// h1{
+//     text-align:center;
+//     color:#333;
+// }
+
+// .container{
+//     max-width:600px;
+//     margin:auto;
+// }
+
+// .card{
+//     background:white;
+//     border-radius:15px;
+//     padding:20px;
+//     margin:15px 0;
+//     box-shadow:0px 2px 10px rgba(0,0,0,0.15);
+// }
+
+// .label{
+//     font-size:18px;
+//     color:#666;
+// }
+
+// .value{
+//     font-size:32px;
+//     font-weight:bold;
+//     color:#222;
+// }
+
+// .footer{
+//     text-align:center;
+//     margin-top:20px;
+//     color:#777;
+// }
+
+// </style>
+
+// <script>
+
+// function updateData()
+// {
+//     fetch('/data')
+//     .then(response => response.json())
+//     .then(data => {
+
+//         document.getElementById("temp").innerHTML =
+//             data.temperature + " °C";
+
+//         document.getElementById("hum").innerHTML =
+//             data.humidity + " %";
+
+//         document.getElementById("co2").innerHTML =
+//             data.co2 + " ppm";
+
+//         document.getElementById("battery").innerHTML =
+//             data.battery + " V";
+
+//         document.getElementById("audio").innerHTML =
+//             data.audio;
+//     });
+// }
+
+// setInterval(updateData,1000);
+
+// </script>
+
+// </head>
+
+// <body onload="updateData()">
+
+// <div class="container">
+
+// <h1>🐝 Hive Monitor</h1>
+
+// <div class="card">
+// <div class="label">🌡 Temperature</div>
+// <div id="temp" class="value">--</div>
+// </div>
+
+// <div class="card">
+// <div class="label">💧 Humidity</div>
+// <div id="hum" class="value">--</div>
+// </div>
+
+// <div class="card">
+// <div class="label">💨 CO₂</div>
+// <div id="co2" class="value">--</div>
+// </div>
+
+// <div class="card">
+// <div class="label">🔋 Battery</div>
+// <div id="battery" class="value">--</div>
+// </div>
+
+// <div class="card">
+// <div class="label">🎤 Audio Peak</div>
+// <div id="audio" class="value">--</div>
+// </div>
+
+// <div class="footer">
+// ESP32 Hive Monitoring System
+// </div>
+
+// </div>
+
+// </body>
+// </html>
+// )rawliteral";
+
+//     server.send(200,"text/html",html);
+// }
+
+
 void handleRoot()
 {
-    String html = R"rawliteral(
-<!DOCTYPE html>
-<html>
-<head>
-<meta name="viewport" content="width=device-width, initial-scale=1">
-
-<title>Hive Monitor</title>
-
-<style>
-
-body{
-    font-family:Arial;
-    background:#f5f5f5;
-    margin:0;
-    padding:20px;
+    server.send_P(200, "text/html", INDEX_HTML);
 }
 
-h1{
-    text-align:center;
-    color:#333;
-}
-
-.container{
-    max-width:600px;
-    margin:auto;
-}
-
-.card{
-    background:white;
-    border-radius:15px;
-    padding:20px;
-    margin:15px 0;
-    box-shadow:0px 2px 10px rgba(0,0,0,0.15);
-}
-
-.label{
-    font-size:18px;
-    color:#666;
-}
-
-.value{
-    font-size:32px;
-    font-weight:bold;
-    color:#222;
-}
-
-.footer{
-    text-align:center;
-    margin-top:20px;
-    color:#777;
-}
-
-</style>
-
-<script>
-
-function updateData()
-{
-    fetch('/data')
-    .then(response => response.json())
-    .then(data => {
-
-        document.getElementById("temp").innerHTML =
-            data.temperature + " °C";
-
-        document.getElementById("hum").innerHTML =
-            data.humidity + " %";
-
-        document.getElementById("co2").innerHTML =
-            data.co2 + " ppm";
-
-        document.getElementById("battery").innerHTML =
-            data.battery + " V";
-
-        document.getElementById("audio").innerHTML =
-            data.audio;
-    });
-}
-
-setInterval(updateData,1000);
-
-</script>
-
-</head>
-
-<body onload="updateData()">
-
-<div class="container">
-
-<h1>🐝 Hive Monitor</h1>
-
-<div class="card">
-<div class="label">🌡 Temperature</div>
-<div id="temp" class="value">--</div>
-</div>
-
-<div class="card">
-<div class="label">💧 Humidity</div>
-<div id="hum" class="value">--</div>
-</div>
-
-<div class="card">
-<div class="label">💨 CO₂</div>
-<div id="co2" class="value">--</div>
-</div>
-
-<div class="card">
-<div class="label">🔋 Battery</div>
-<div id="battery" class="value">--</div>
-</div>
-
-<div class="card">
-<div class="label">🎤 Audio Peak</div>
-<div id="audio" class="value">--</div>
-</div>
-
-<div class="footer">
-ESP32 Hive Monitoring System
-</div>
-
-</div>
-
-</body>
-</html>
-)rawliteral";
-
-    server.send(200,"text/html",html);
-}
 
 //======================================================
 // DASHBOARD DATA ENDPOINT
 //======================================================
+// void handleData()
+// {
+//     String json = "{";
+
+//     json += "\"temperature\":";
+//     json += String(lastTemp,1);
+
+//     json += ",\"humidity\":";
+//     json += String(lastHumidity,1);
+
+//     json += ",\"co2\":";
+//     json += String(lastCO2);
+
+//     json += ",\"battery\":";
+//     json += String(lastBatteryVoltage,2);
+
+//     long audioPeak = readMicrophonePeak(50);
+
+//     json += ",\"audio\":";
+//     json += String(audioPeak);
+
+//     json += "}";
+
+//     server.send(200, "application/json", json);
+// }
+
+
 void handleData()
 {
     String json = "{";
 
-    json += "\"temperature\":";
-    json += String(lastTemp,1);
+    json += "\"temp\":" + String(lastTemp,1);
+    json += ",\"humidity\":" + String(lastHumidity,1);
+    json += ",\"co2\":" + String(lastCO2);
 
-    json += ",\"humidity\":";
-    json += String(lastHumidity,1);
+    json += ",\"battV\":" + String(lastBatteryVoltage,2);
 
-    json += ",\"co2\":";
-    json += String(lastCO2);
+    json += ",\"battA\":0";
 
-    json += ",\"battery\":";
-    json += String(lastBatteryVoltage,2);
+    json += ",\"solW\":0";
 
-    long audioPeak = readMicrophonePeak(50);
+    json += ",\"audio\":" + String(readMicrophonePeak(50));
 
-    json += ",\"audio\":";
-    json += String(audioPeak);
+    json += ",\"co2_ok\":true";
+    json += ",\"batt_ok\":true";
+    json += ",\"solar_ok\":true";
+    json += ",\"mic_ok\":true";
+    json += ",\"sd_ok\":true";
+    json += ",\"cloud_ok\":";
+
+    json += (WiFi.status() == WL_CONNECTED ? "true" : "false");
 
     json += "}";
 
