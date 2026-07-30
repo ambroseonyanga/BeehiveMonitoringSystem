@@ -12,6 +12,10 @@
 #include <HTTPClient.h>
 #include <WiFiClientSecure.h>
 #include <Preferences.h>
+#include "dashboard.h"
+#include "settings.h"
+#include "connection.h"
+#include "logging.h"
 
 Preferences prefs; // This one is for storing duty cycle settings in non-volatile memory
 
@@ -45,6 +49,22 @@ unsigned long sensorInterval = 60000;
 unsigned long thingSpeakInterval = 15000;
 unsigned long recordInterval = 30;
 unsigned long uploadInterval = 30000;
+bool fullDutyCycle = false;
+
+unsigned long lastSensorTime = 0;
+unsigned long lastThingSpeakTime = 0;
+unsigned long lastRecordTime = 0;
+unsigned long lastUploadTime = 0;
+unsigned long lastDisplayTime = 0;
+
+static uint16_t co2 = 0;
+static float temp = 0;
+static float humidity = 0;
+static float batteryVoltage = 0;
+static long audioPeak = 0;
+
+void normalLoop();
+void dutyCycleLoop();
 
 // ======================================================
 // TIME SERVER
@@ -128,582 +148,6 @@ uint16_t lastCO2 = 400;
 float lastTemp = 25.0;
 float lastHumidity = 50.0;
 float lastBatteryVoltage = 0.0;
-
-// ======================================================
-// SETTINGS HTML
-// ======================================================
-const char SETTINGS_HTML[] PROGMEM = R"rawliteral(
-
-<!DOCTYPE html>
-<html>
-<head>
-<meta charset="UTF-8">
-<meta name="viewport"
-      content="width=device-width, initial-scale=1">
-
-<title>Settings</title>
-
-<style>
-
-body{
-    font-family:Arial;
-    background:#f3f4f6;
-    padding:20px;
-}
-
-.card{
-    background:white;
-    max-width:500px;
-    margin:auto;
-    padding:20px;
-    border-radius:12px;
-    box-shadow:0 2px 6px rgba(0,0,0,.1);
-}
-
-input{
-    width:100%;
-    padding:8px;
-    margin-top:5px;
-    margin-bottom:15px;
-}
-
-button{
-    padding:10px 20px;
-}
-
-</style>
-</head>
-
-<body>
-
-<div class="card">
-
-<h2>⚙ Duty Cycle Settings</h2>
-
-<label>Sensor Interval (sec)</label>
-<input id="sensorInterval" type="number">
-
-<label>ThingSpeak Interval (sec)</label>
-<input id="tsInterval" type="number">
-
-<label>Audio Record Interval (sec)</label>
-<input id="recordInterval" type="number">
-
-<label>Upload Interval (sec)</label>
-<input id="uploadInterval" type="number">
-
-<button onclick="saveSettings()">
-Save
-</button>
-
-<a href="/">
-<button>
-Dashboard
-</button>
-</a>
-
-</div>
-
-<script>
-
-async function loadSettings()
-{
-    const r = await fetch('/settings');
-    const s = await r.json();
-
-    sensorInterval.value = s.sensor;
-    tsInterval.value = s.ts;
-    recordInterval.value = s.record;
-    uploadInterval.value = s.upload;
-}
-
-loadSettings();
-
-async function saveSettings()
-{
-    const sensor = sensorInterval.value;
-    const ts = tsInterval.value;
-    const record = recordInterval.value;
-    const upload = uploadInterval.value;
-
-    const response =
-        await fetch(
-        `/setDuty?sensor=${sensor}&ts=${ts}&record=${record}&upload=${upload}`);
-
-    alert(await response.text());
-}
-
-</script>
-
-</body>
-</html>
-
-)rawliteral";
-// ======================================================
-// DASHBOARD HTML
-// ======================================================
-const char INDEX_HTML[] PROGMEM = R"rawliteral(
-
-<!DOCTYPE html>
-
-<html>
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-
-<title>Smart Beehive Monitor</title>
-
-<style>
-
-*{
-    margin:0;
-    padding:0;
-    box-sizing:border-box;
-}
-
-body{
-    font-family:Arial, sans-serif;
-    background:#f3f4f6;
-    padding:10px;
-}
-
-.container{
-    max-width:900px;
-    margin:auto;
-}
-
-.header{
-    background:#f59e0b;
-    color:white;
-    text-align:center;
-    padding:15px;
-    border-radius:12px;
-    margin-bottom:10px;
-}
-
-.header h1{
-    font-size:26px;
-}
-
-.header p{
-    font-size:14px;
-    margin-top:5px;
-}
-
-.status-bar{
-    display:flex;
-    flex-wrap:wrap;
-    justify-content:center;
-    gap:6px;
-    margin-bottom:10px;
-}
-
-.badge{
-    padding:6px 10px;
-    border-radius:20px;
-    color:white;
-    font-size:12px;
-    font-weight:bold;
-}
-
-.ok{
-    background:#10b981;
-}
-
-.err{
-    background:#ef4444;
-}
-
-.grid{
-    display:grid;
-    grid-template-columns:repeat(3,1fr);
-    gap:8px;
-}
-
-.card{
-    background:white;
-    border-radius:12px;
-    padding:12px;
-    text-align:center;
-    box-shadow:0 2px 6px rgba(0,0,0,0.1);
-}
-
-.icon{
-    font-size:24px;
-}
-
-.value{
-    font-size:22px;
-    font-weight:bold;
-    margin-top:5px;
-    color:#111827;
-}
-
-.label{
-    font-size:12px;
-    color:#6b7280;
-    margin-top:3px;
-}
-
-.audio-card{
-    grid-column:span 3;
-}
-
-.footer{
-    background:white;
-    margin-top:10px;
-    border-radius:12px;
-    padding:10px;
-    text-align:center;
-    font-size:14px;
-    box-shadow:0 2px 6px rgba(0,0,0,0.1);
-}
-
-@media(max-width:600px)
-{
-    .grid{
-        grid-template-columns:repeat(2,1fr);
-    }
-
-    .audio-card{
-        grid-column:span 2;
-    }
-
-    .header h1{
-        font-size:20px;
-    }
-
-    .value{
-        font-size:18px;
-    }
-}
-
-</style>
-
-</head>
-
-<body>
-
-<div class="container">
-
-<div class="header">
-    <h1>🐝 Smart Beehive Monitor</h1>
-    <p>Hive 12 Live Dashboard</p>
-</div>
-
-<div id="statusBar" class="status-bar"></div>
-
-<div class="grid">
-
-    <div class="card">
-        <div class="icon">🌡️</div>
-        <div id="temp" class="value">--</div>
-        <div class="label">Temperature (°C)</div>
-    </div>
-
-    <div class="card">
-        <div class="icon">💧</div>
-        <div id="hum" class="value">--</div>
-        <div class="label">Humidity (%)</div>
-    </div>
-
-    <div class="card">
-        <div class="icon">💨</div>
-        <div id="co2" class="value">--</div>
-        <div class="label">CO₂ (ppm)</div>
-    </div>
-
-    <div class="card">
-        <div class="icon">🔋</div>
-        <div id="battery" class="value">--</div>
-        <div class="label">Battery (V)</div>
-    </div>
-
-    <div class="card">
-        <div class="icon">⚡</div>
-        <div id="current" class="value">--</div>
-        <div class="label">Current (A)</div>
-    </div>
-
-    <div class="card">
-        <div class="icon">☀️</div>
-        <div id="solar" class="value">--</div>
-        <div class="label">Solar Power (W)</div>
-    </div>
-
-    <div class="card audio-card">
-        <div class="icon">🎤</div>
-        <div id="audio" class="value">--</div>
-        <div class="label">Audio Peak</div>
-    </div>
-
-</div>
-<!-- <div class="card" style="margin-top:10px">
-
-<h3>Duty Cycle Settings</h3>
-
-<label>Sensor Interval (sec)</label><br>
-<input id="sensorInterval" type="number"><br><br>
-
-<label>ThingSpeak Interval (sec)</label><br>
-<input id="tsInterval" type="number"><br><br>
-
-<label>Audio Record Interval (sec)</label><br>
-<input id="recordInterval" type="number"><br><br>
-
-<label>Upload Interval (sec)</label><br>
-<input id="uploadInterval" type="number"><br><br>
-
-<button onclick="saveSettings()">Save</button>
-
-</div> -->
-
-
-<div style="text-align:center;margin-top:15px">
-
-<a href="/settingsPage">
-<button
-style="
-padding:10px 20px;
-background:#f59e0b;
-color:white;
-border:none;
-border-radius:8px;">
-⚙ Settings
-</button>
-</a>
-
-</div>
-
-<div class="card" style="margin-top:10px">
-    <h3>⚠ Error Log</h3>
-
-    <div id="errorLog"
-         style="
-         text-align:left;
-         max-height:200px;
-         overflow-y:auto;
-         margin-top:10px;
-         font-size:13px;">
-    Loading...
-    </div>
-</div>
-
-<div class="footer">
-    Last Update:
-    <span id="lastUpdated">--</span>
-</div>
-
-
-</div>
-
-<script>
-async function updateErrors()
-{
-    try
-    {
-        const response =
-            await fetch('/errors');
-
-        const errors =
-            await response.json();
-
-        const div =
-            document.getElementById("errorLog");
-
-        if(errors.length === 0)
-        {
-            div.innerHTML =
-                "<span style='color:green'>No errors</span>";
-            return;
-        }
-
-div.innerHTML =
-    errors.reverse()
-          .map(e =>
-          {
-              let color = "#ef4444";
-
-              if(e.includes("[WARN]"))
-                  color = "#f59e0b";
-
-              if(e.includes("[INFO]"))
-                  color = "#10b981";
-
-              return `
-                  <div style="
-                      padding:4px;
-                      border-bottom:1px solid #ddd;
-                      color:${color};">
-                      ${e}
-                  </div>`;
-          })
-          .join("");
-    }
-    catch(e)
-    {
-        console.log(e);
-    }
-}
-
-async function loadSettings()
-{
-    const r = await fetch('/settings');
-    const s = await r.json();
-
-    document.getElementById("sensorInterval").value =
-        s.sensor;
-
-    document.getElementById("tsInterval").value =
-        s.ts;
-
-    document.getElementById("recordInterval").value =
-        s.record;
-
-    document.getElementById("uploadInterval").value =
-        s.upload;
-}
-
-loadSettings();
-
-async function updateData()
-{
-    try
-    {
-        const response = await fetch('/data');
-        const data = await response.json();
-
-        document.getElementById("temp").innerHTML =
-            Number(data.temp).toFixed(1);
-
-        document.getElementById("hum").innerHTML =
-            Number(data.humidity).toFixed(1);
-
-        document.getElementById("co2").innerHTML =
-            data.co2;
-
-        document.getElementById("battery").innerHTML =
-            Number(data.battV).toFixed(2);
-
-        document.getElementById("current").innerHTML =
-            Number(data.battA).toFixed(3);
-
-        document.getElementById("solar").innerHTML =
-            Number(data.solW).toFixed(2);
-
-        document.getElementById("audio").innerHTML =
-            data.audio;
-
-        const statusBar =
-            document.getElementById("statusBar");
-
-        statusBar.innerHTML = "";
-
-        const sensors = [
-            ["CO₂", data.co2_ok],
-            ["Battery", data.batt_ok],
-            ["Solar", data.solar_ok],
-            ["Mic", data.mic_ok],
-            ["SD", data.sd_ok],
-            ["Cloud", data.cloud_ok]
-        ];
-
-        sensors.forEach(sensor =>
-        {
-            const badge =
-                document.createElement("span");
-
-            badge.className =
-                "badge " +
-                (sensor[1] ? "ok" : "err");
-
-            badge.innerHTML =
-                (sensor[1] ? "✓ " : "✗ ") +
-                sensor[0];
-
-            statusBar.appendChild(badge);
-        });
-
-        document.getElementById("lastUpdated")
-            .innerHTML =
-            new Date().toLocaleTimeString();
-    }
-    catch(err)
-    {
-        console.log(err);
-    }
-}
-
-updateData();
-setInterval(updateData, 2000);
-updateErrors();
-setInterval(updateErrors,5000);
-
-async function saveSettings()
-{
-    const sensor =
-        document.getElementById("sensorInterval").value;
-
-    const ts =
-        document.getElementById("tsInterval").value;
-
-    const record =
-        document.getElementById("recordInterval").value;
-
-    const upload =
-        document.getElementById("uploadInterval").value;
-
-    const response =
-        await fetch(
-            `/setDuty?sensor=${sensor}&ts=${ts}&record=${record}&upload=${upload}`
-        );
-
-    alert(await response.text());
-}
-</script>
-
-</body>
-</html>
-)rawliteral";
-
-// ======================================================
-// ERROR LOGGING
-// ======================================================
-
-#define MAX_ERRORS 20
-
-String errorLogs[MAX_ERRORS];
-int errorIndex = 0;
-
-void addError(String msg)
-{
-    struct tm timeinfo;
-    char ts[25];
-
-    if (getLocalTime(&timeinfo))
-    {
-        sprintf(ts,
-                "%02d:%02d:%02d",
-                timeinfo.tm_hour,
-                timeinfo.tm_min,
-                timeinfo.tm_sec);
-    }
-    else
-    {
-        strcpy(ts, "--:--:--");
-    }
-
-    errorLogs[errorIndex] =
-        "[" + String(ts) + "] " + msg;
-
-    errorIndex++;
-
-    if (errorIndex >= MAX_ERRORS)
-        errorIndex = 0;
-
-    Serial.println(errorLogs[(errorIndex - 1 + MAX_ERRORS) % MAX_ERRORS]);
-}
-
 // ======================================================
 // SETTINGS HANDLER
 // ======================================================
@@ -742,10 +186,16 @@ void handleSetDuty()
         uploadInterval =
             server.arg("upload").toInt() * 1000UL;
     }
+    if (server.hasArg("fullDuty"))
+    {
+        fullDutyCycle = server.arg("fullDuty").toInt() == 1;
+    }
+
     prefs.putULong("sensor", sensorInterval);
     prefs.putULong("ts", thingSpeakInterval);
     prefs.putULong("record", recordInterval);
     prefs.putULong("upload", uploadInterval);
+    prefs.putBool("fullDuty", fullDutyCycle);
 
     Serial.println("Duty cycle updated from UI");
 
@@ -754,107 +204,6 @@ void handleSetDuty()
         "text/plain",
         "Settings saved");
 }
-// ======================================================
-// WIFI CONNECT
-// ======================================================
-void connectWiFi()
-{
-    Serial.println();
-    Serial.println("[WIFI]");
-
-    WiFi.mode(WIFI_AP_STA);
-
-    // Connect to router
-    WiFi.begin(ssid, password);
-
-    Serial.print("Connecting");
-
-    while (WiFi.status() != WL_CONNECTED)
-    {
-        server.handleClient();
-        yield();
-        delay(500);
-        Serial.print(".");
-    }
-
-    Serial.println();
-    Serial.println("Connected to Router");
-
-    // Create ESP32 WiFi
-    WiFi.softAP(
-        "HiveMonitor",
-        "12345678");
-
-    Serial.println();
-
-    Serial.print("Router IP: ");
-    Serial.println(WiFi.localIP());
-
-    Serial.print("Dashboard IP: ");
-    Serial.println(WiFi.softAPIP());
-
-    digitalWrite(LED_PIN, HIGH);
-}
-// ======================================================
-// STARTING AP
-// ======================================================
-void startAP()
-{
-    WiFi.mode(WIFI_AP);
-
-    WiFi.softAP(
-        "HiveMonitor",
-        "12345678");
-
-    Serial.print("Dashboard IP: ");
-    Serial.println(WiFi.softAPIP());
-}
-
-// ======================================================
-// CONNECTING TO STA
-// ======================================================
-bool connectSTA()
-{
-    Serial.println("Starting STA...");
-
-    WiFi.mode(WIFI_AP_STA);
-
-    WiFi.begin(ssid, password);
-
-    unsigned long start = millis();
-
-    while (WiFi.status() != WL_CONNECTED)
-    {
-        server.handleClient();
-        yield();
-        if (millis() - start > 15000)
-        {
-            Serial.println("STA connection failed");
-            return false;
-        }
-
-        delay(500);
-        Serial.print(".");
-    }
-
-    Serial.println();
-    Serial.print("STA IP: ");
-    Serial.println(WiFi.localIP());
-
-    return true;
-}
-// ======================================================
-// DISCONNECTING FROM STA
-// ======================================================
-void disconnectSTA()
-{
-    WiFi.disconnect(true);
-
-    WiFi.mode(WIFI_AP);
-
-    Serial.println("STA disconnected");
-}
-
 //=====================================================
 // UPLOADING FILES TO SERVER
 //=====================================================
@@ -875,9 +224,6 @@ bool uploadFileToServer(String filepath)
 
     File file = SD.open(filepath, FILE_READ);
 
-    Serial.print("Uploading: ");
-    Serial.println(filepath);
-
     if (!file)
     {
         Serial.println("Failed to open file:");
@@ -890,16 +236,6 @@ bool uploadFileToServer(String filepath)
 
     Serial.print("Uploading: ");
     Serial.println(filepath);
-
-    Serial.print("Size: ");
-    Serial.println(file.size());
-
-    // if (!file)
-    // {
-    //     Serial.println("Failed to open file:");
-    //     Serial.println(filepath);
-    //     return false;
-    // }
 
     String filename = filepath;
     filename.replace("/", "");
@@ -1047,16 +383,16 @@ void uploadPendingFiles()
 
         if (filename == hiveNo + ".csv")
         {
-            String apiKey = "7747ea95-9682-42a7-b0aa-44eb374b4300";
+            // String apiKey = "7747ea95-9682-42a7-b0aa-44eb374b4300";
 
-            String hiveName = "Hive 01";
-            String hiveNameEncoded = hiveName;
-            hiveNameEncoded.replace(" ", "%20");
+            // String hiveName = "Hive 01";
+            // String hiveNameEncoded = hiveName;
+            // hiveNameEncoded.replace(" ", "%20");
 
-            String path =
-                "/conditions/hives/" +
-                hiveNameEncoded +
-                "/upload";
+            // String path =
+            //     "/conditions/hives/" +
+            //     hiveNameEncoded +
+            //     "/upload";
 
             //--------------------------------------------------
             // Open CSV file from SD
@@ -1432,20 +768,6 @@ void uploadPendingFiles()
 
             client.stop();
 
-            //--------------------------------------------------
-            // Optional: delete uploaded file
-            //--------------------------------------------------
-            /*
-            if (SD.remove("/" + filename))
-            {
-                Serial.println("Uploaded WAV deleted from SD.");
-            }
-            else
-            {
-                Serial.println("Failed to delete WAV.");
-            }
-            */
-
             upload = true;
         }
 
@@ -1549,81 +871,6 @@ void logToCSV(float tempReading,
 }
 
 // ======================================================
-// WIFI MONITOR
-// ======================================================
-
-void checkWiFiConnection()
-{
-
-    if (WiFi.status() == WL_CONNECTED)
-    {
-        digitalWrite(LED_PIN, HIGH);
-        return;
-    }
-
-    Serial.println();
-    // Serial.println("WiFi Lost!");
-    addError("[WARN] WiFi connection lost");
-    digitalWrite(LED_PIN, LOW);
-    connectWiFi();
-    configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
-}
-
-// ======================================================
-// TIME SETUP
-// ======================================================
-
-void setupTime()
-{
-
-    configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
-
-    Serial.println();
-    Serial.println("[TIME]");
-
-    struct tm timeinfo;
-
-    while (!getLocalTime(&timeinfo))
-    {
-        server.handleClient();
-        yield();
-        Serial.println("Waiting for NTP time...");
-        delay(1000);
-    }
-
-    // addError("[INFO] Time synchronized successfully");
-    Serial.println("Time synchronized successfully");
-}
-
-// ======================================================
-// GET TIMESTAMP
-// ======================================================
-
-String getTimestamp()
-{
-
-    struct tm timeinfo;
-
-    if (!getLocalTime(&timeinfo))
-    {
-        return "NO_TIME";
-    }
-
-    char buffer[40];
-
-    sprintf(buffer,
-            "%04d-%02d-%02d_%02d%02d%02d",
-            timeinfo.tm_year + 1900,
-            timeinfo.tm_mon + 1,
-            timeinfo.tm_mday,
-            timeinfo.tm_hour,
-            timeinfo.tm_min,
-            timeinfo.tm_sec);
-
-    return String(buffer);
-}
-
-// ======================================================
 // READ SMOOTHED CO2
 // ======================================================
 
@@ -1634,16 +881,6 @@ bool readCO2Smooth(uint16_t &co2, float &temp, float &humidity)
     float rawTemp = 0, rawHumidity = 0;
 
     error = scd4x.readMeasurement(rawCO2, rawTemp, rawHumidity);
-
-    // if (error != 0 || rawCO2 == 0)
-    // {
-    //     addError("CO2 sensor read failed");
-    //     co2 = lastCO2;
-    //     temp = lastTemp;
-    //     humidity = lastHumidity;
-    //     return false;
-    // }
-
     if (error != 0)
     {
         addError("CO2 communication error");
@@ -1800,40 +1037,6 @@ void sendToThingSpeak(float temp, float humidity, uint16_t co2,
     }
 }
 
-// =====================================================
-// API ENDPOINT FOR ERRORS
-//=====================================================
-void handleErrors()
-{
-    String json = "[";
-
-    bool first = true;
-
-    for (int i = 0; i < MAX_ERRORS; i++)
-    {
-        int idx =
-            (errorIndex + i) % MAX_ERRORS;
-
-        if (errorLogs[idx].length() == 0)
-            continue;
-
-        if (!first)
-            json += ",";
-
-        json += "\"" +
-                errorLogs[idx] +
-                "\"";
-
-        first = false;
-    }
-
-    json += "]";
-
-    server.send(
-        200,
-        "application/json",
-        json);
-}
 // ======================================================
 // MICROPHONE SETUP
 // ======================================================
@@ -2019,7 +1222,6 @@ bool recordAudio()
 
         file.write((uint8_t *)samples16, count * sizeof(int16_t));
         samplesWritten += count;
-        delay(1);
     }
 
     file.close();
@@ -2034,7 +1236,9 @@ void handleRoot()
 
 void handleData()
 {
-    String json = "{";
+    String json;
+    json.reserve(512);
+    json = "{";
 
     json += "\"temp\":" + String(lastTemp, 1);
     json += ",\"humidity\":" + String(lastHumidity, 1);
@@ -2042,21 +1246,8 @@ void handleData()
 
     json += ",\"battV\":" + String(lastBatteryVoltage, 2);
 
-    // json += ",\"battA\":0";
-
-    // json += ",\"solW\":0";
-
     float battCurrent =
         batterySensor.getCurrent_mA() / 1000.0;
-
-    // float solarVoltage =
-    //     solarSensor.getBusVoltage_V();
-
-    // float solarCurrent =
-    //     solarSensor.getCurrent_mA() / 1000.0;
-
-    // float solarPower =
-    //     solarVoltage * solarCurrent;
 
     float solarVoltage = solarSensor.getBusVoltage_V();
     float solarCurrent = solarSensor.getCurrent_mA() / 1000.0;
@@ -2081,12 +1272,7 @@ void handleData()
 
     json += ",\"co2_ok\":true";
     json += ",\"batt_ok\":true";
-    // json += ",\"solar_ok\":true";
 
-    // float solarVoltage = solarSensor.getBusVoltage_V();
-
-    // bool solarConnected =
-    //     solarVoltage > 1.0;
     bool solarConnected =
         solarVoltage > 2.0 &&
         abs(solarCurrent) > 0.005;
@@ -2094,12 +1280,8 @@ void handleData()
     json += ",\"solar_ok\":";
     json += solarConnected ? "true" : "false";
 
-    // json += ",\"mic_ok\":true";
-
     json += ",\"mic_ok\":";
     json += mic_ok ? "true" : "false";
-
-    // json += ",\"sd_ok\":true";
 
     json += ",\"sd_ok\":";
     json += sd_ok ? "true" : "false";
@@ -2141,7 +1323,9 @@ void powerOffMicrophone()
 //=====================================================
 void handleSettings()
 {
-    String json = "{";
+    String json;
+    json.reserve(512);
+    json = "{";
 
     json += "\"sensor\":" +
             String(sensorInterval / 1000);
@@ -2154,6 +1338,9 @@ void handleSettings()
 
     json += ",\"upload\":" +
             String(uploadInterval / 1000);
+
+    json += ",\"fullDuty\":";
+    json += fullDutyCycle ? "true" : "false";
 
     json += "}";
 
@@ -2184,6 +1371,8 @@ void setup()
 
     uploadInterval =
         prefs.getULong("upload", 30000);
+    fullDutyCycle =
+        prefs.getBool("fullDuty", false);
 
     Serial.println();
     Serial.println("================================");
@@ -2300,27 +1489,106 @@ void setup()
     Serial.println("   Fields: Temp | Humidity | CO2 | Battery | Audio Peak");
 }
 
-// ======================================================
+void loop()
+{
+    if (fullDutyCycle)
+    {
+        dutyCycleLoop();
+    }
+    else
+    {
+        normalLoop();
+    }
+}
+
+void dutyCycleLoop()
+{
+    server.handleClient();
+
+    if (millis() - lastSensorTime >= sensorInterval)
+    {
+        bool co2Ok = readCO2Smooth(co2, temp, humidity);
+
+        batteryVoltage = readBatteryVoltage();
+
+        powerOnMicrophone();
+        delay(200);
+
+        audioPeak = readMicrophonePeak(100);
+        lastAudioPeak = audioPeak;
+
+        powerOffMicrophone();
+
+        if (co2Ok)
+        {
+            logToCSV(temp, humidity, co2);
+            Serial.println("Sensor data saved to CSV");
+        }
+
+        lastSensorTime = millis();
+    }
+
+    if (millis() - lastUploadTime >= uploadInterval)
+    {
+        if (connectSTA())
+        {
+            sendToThingSpeak(
+                temp,
+                humidity,
+                co2,
+                batteryVoltage,
+                audioPeak);
+            uploadPendingFiles();
+
+            disconnectSTA();
+        }
+
+        lastUploadTime = millis();
+    }
+
+    if (millis() - lastRecordTime >= (recordInterval * 1000UL))
+    {
+        powerOnMicrophone();
+        delay(200);
+
+        recordAudio();
+
+        powerOffMicrophone();
+
+        lastRecordTime = millis();
+    }
+
+    if (WiFi.softAPgetStationNum() == 0)
+    {
+        Serial.println("Preparing for sleep...");
+
+        scd4x.stopPeriodicMeasurement();
+
+        powerOffMicrophone();
+
+        disconnectSTA();
+
+        esp_sleep_enable_timer_wakeup(
+            sensorInterval * 1000ULL);
+
+        Serial.println("Entering Light Sleep");
+
+        esp_light_sleep_start();
+
+        Serial.println("Awake");
+
+        scd4x.startPeriodicMeasurement();
+
+        delay(500);
+    }
+} // ======================================================
 // LOOP
 // ======================================================
 
-void loop()
+void normalLoop()
 {
 
-    static unsigned long lastSensorTime = millis() - sensorInterval; // Initialize to trigger immediate reading on startup
-
-    static uint16_t co2 = 0;
-    static float temp = 0;
-    static float humidity = 0;
-    static float batteryVoltage = 0;
-    static long audioPeak = 0;
-
     server.handleClient();
-    static unsigned long lastThingSpeakTime = 0;
-    static unsigned long lastRecordTime = 0;
-    static unsigned long lastDisplayTime = 0;
-    // static unsigned long lastCSVTime = 0;
-    static unsigned long lastUploadTime = 0;
 
     if (millis() - lastSensorTime >= sensorInterval)
     {
