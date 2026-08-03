@@ -383,16 +383,18 @@ void uploadPendingFiles()
 
         if (filename == hiveNo + ".csv")
         {
-            // String apiKey = "7747ea95-9682-42a7-b0aa-44eb374b4300";
+            String apiKey = "7747ea95-9682-42a7-b0aa-44eb374b4300";
 
-            // String hiveName = "Hive 01";
-            // String hiveNameEncoded = hiveName;
-            // hiveNameEncoded.replace(" ", "%20");
+            String hiveName = hiveNo;
+            hiveName.replace("_", " ");
 
-            // String path =
-            //     "/conditions/hives/" +
-            //     hiveNameEncoded +
-            //     "/upload";
+            String hiveNameEncoded = hiveName;
+            hiveNameEncoded.replace(" ", "%20");
+
+            String path =
+                "/conditions/hives/" +
+                hiveNameEncoded +
+                "/upload";
 
             //--------------------------------------------------
             // Open CSV file from SD
