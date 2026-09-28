@@ -20,19 +20,61 @@
 Preferences prefs; // This one is for storing duty cycle settings in non-volatile memory
 
 // ======================================================
-// WIFI
+// CREDENTIALS
 // ======================================================
+// Keep this file private — it contains the WiFi password and device keys.
 
-const char *ssid = "IoT-ra";
-const char *password = "P9$y#F5x!b&";
+// WiFi
+// const char *ssid = "IoT-ra";
+// const char *password = "P9$y#F5x!b&";
+
+const char *ssid = "RENU";
+const char *password = "renu12345";
+
+// ThingSpeak
+const char *writeAPIKey = "HEHEZST627ICEU7E";
+
+// AdEMNEA on AWS — paste this board's key from the dashboard (shown once).
+const char *AWS_API_BASE = "https://erwfjmnjog.execute-api.eu-north-1.amazonaws.com";
+const char *AWS_DEVICE_KEY = "M86ZFZMaG6WdPjR0FdZgRkJITFvqsM02kRqTBhCz7EYgJYJHOZNFh9nNnVVPpfVE";
+
+// ======================================================
+// AWS: SERVER CERTIFICATE
+// ======================================================
+// Amazon Root CA 1 — trust anchor for the AdEMNEA AWS endpoint (API Gateway,
+// chain: *.execute-api… → Amazon RSA 2048 M04 → Amazon Root CA 1). Valid until 2038-01-17.
+// Source: https://www.amazontrust.com/repository/AmazonRootCA1.pem
+// SHA-256 fingerprint: 8E:CD:E6:88:4F:3D:87:B1:12:5B:A3:1A:C3:FC:B1:3D:70:16:DE:7F:57:CC:90:4F:E1:CB:97:C6:AE:98:19:6E
+
+static const char AWS_ROOT_CA[] PROGMEM = R"PEM(
+-----BEGIN CERTIFICATE-----
+MIIDQTCCAimgAwIBAgITBmyfz5m/jAo54vB4ikPmljZbyjANBgkqhkiG9w0BAQsF
+ADA5MQswCQYDVQQGEwJVUzEPMA0GA1UEChMGQW1hem9uMRkwFwYDVQQDExBBbWF6
+b24gUm9vdCBDQSAxMB4XDTE1MDUyNjAwMDAwMFoXDTM4MDExNzAwMDAwMFowOTEL
+MAkGA1UEBhMCVVMxDzANBgNVBAoTBkFtYXpvbjEZMBcGA1UEAxMQQW1hem9uIFJv
+b3QgQ0EgMTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBALJ4gHHKeNXj
+ca9HgFB0fW7Y14h29Jlo91ghYPl0hAEvrAIthtOgQ3pOsqTQNroBvo3bSMgHFzZM
+9O6II8c+6zf1tRn4SWiw3te5djgdYZ6k/oI2peVKVuRF4fn9tBb6dNqcmzU5L/qw
+IFAGbHrQgLKm+a/sRxmPUDgH3KKHOVj4utWp+UhnMJbulHheb4mjUcAwhmahRWa6
+VOujw5H5SNz/0egwLX0tdHA114gk957EWW67c4cX8jJGKLhD+rcdqsq08p8kDi1L
+93FcXmn/6pUCyziKrlA4b9v7LWIbxcceVOF34GfID5yHI9Y/QCB/IIDEgEw+OyQm
+jgSubJrIqg0CAwEAAaNCMEAwDwYDVR0TAQH/BAUwAwEB/zAOBgNVHQ8BAf8EBAMC
+AYYwHQYDVR0OBBYEFIQYzIU07LwMlJQuCFmcx7IQTgoIMA0GCSqGSIb3DQEBCwUA
+A4IBAQCY8jdaQZChGsV2USggNiMOruYou6r4lK5IpDB/G/wkjUu0yKGX9rbxenDI
+U5PMCCjjmCXPI6T53iHTfIUJrU6adTrCC2qJeHZERxhlbI1Bjjt/msv0tadQ1wUs
+N+gDS63pYaACbvXy8MWy7Vu33PqUXHeeE6V/Uq2V8viTO96LXFvKWlJbYK8U90vv
+o/ufQJVtMVT8QtPHRh8jrdkPSHCa2XV4cdFyQzR1bldZwgJcJmApzyMZFo6IQ6XU
+5MsI+yMRQ+hDKXJioaldXgjUkK642M4UwtBV8ob2xJNDd2ZhwLnoQdeXeGADbkpy
+rqXRfboQnoZsG4q5WTP468SQvvG5
+-----END CERTIFICATE-----
+)PEM";
 
 // ======================================================
 // THINGSPEAK CONFIGURATION
 // ======================================================
 
 unsigned long channelNumber = 3384879;
-const char *writeAPIKey = "HEHEZST627ICEU7E";
-String hiveNo = "12";
+String hiveNo = "1";
 
 // ======================================================
 // THINGSPEAK TIMING - SEND EVERY 15 SECONDS
@@ -80,10 +122,8 @@ const int daylightOffset_sec = 0;
 // API ENDPOINT CONFIGURATION
 //=======================================================
 
-const char *SERVER_HOST = "196.43.168.57";
-const int SERVER_PORT = 8005;
-const char *API_ENDPOINT = "/upload";
-const char *BEARER_TOKEN = "my_secure_hive_key_123";
+// AWS: sensor data (the CSV rows) goes to the AdEMNEA platform on AWS as JSON,
+// authenticated with this board's own key (AWS_DEVICE_KEY above).
 
 // ======================================================
 // I2C PINS
@@ -204,590 +244,150 @@ void handleSetDuty()
         "text/plain",
         "Settings saved");
 }
-//=====================================================
-// UPLOADING FILES TO SERVER
-//=====================================================
-
-bool uploadFileToServer(String filepath)
-{
-    if (!sd_ok)
-        return false;
-
-    if (WiFi.status() != WL_CONNECTED)
-        return false;
-
-    // Ensure SD path starts with /
-    if (!filepath.startsWith("/"))
-    {
-        filepath = "/" + filepath;
-    }
-
-    File file = SD.open(filepath, FILE_READ);
-
-    if (!file)
-    {
-        Serial.println("Failed to open file:");
-        Serial.println(filepath);
-        return false;
-    }
-
-    Serial.print("Size: ");
-    Serial.println(file.size());
-
-    Serial.print("Uploading: ");
-    Serial.println(filepath);
-
-    String filename = filepath;
-    filename.replace("/", "");
-
-    String boundary = "----ESP32Boundary7MA4YWxkTrZu0gW";
-
-    String head =
-        "--" + boundary + "\r\n"
-                          "Content-Disposition: form-data; name=\"file\"; filename=\"" +
-        filename + "\"\r\n";
-
-    if (filename.endsWith(".wav"))
-        head += "Content-Type: audio/wav\r\n\r\n";
-    else
-        head += "Content-Type: text/csv\r\n\r\n";
-
-    String tail =
-        "\r\n--" + boundary + "--\r\n";
-
-    uint32_t totalLength =
-        head.length() +
-        file.size() +
-        tail.length();
-
-    WiFiClient client;
-
-    if (!client.connect(SERVER_HOST, SERVER_PORT))
-    {
-        Serial.println("Connection failed");
-        file.close();
-        return false;
-    }
-
-    client.print("POST ");
-    client.print(API_ENDPOINT);
-    client.println(" HTTP/1.1");
-
-    client.print("Host: ");
-    client.println(SERVER_HOST);
-
-    client.print("Authorization: Bearer ");
-    client.println(BEARER_TOKEN);
-    client.println("Content-Type: multipart/form-data; boundary=" + boundary);
-    client.print("Content-Length: ");
-    client.println(totalLength);
-    client.println();
-
-    client.print(head);
-
-    uint8_t buffer[1024];
-
-    while (file.available())
-    {
-        size_t len = file.read(buffer, sizeof(buffer));
-        client.write(buffer, len);
-    }
-
-    client.print(tail);
-    size_t fileSize = file.size();
-
-    file.close();
-
-    unsigned long start = millis();
-
-    while (!client.available())
-    {
-        server.handleClient();
-        yield();
-        if (millis() - start > 15000)
-        {
-            // Serial.println("Upload timeout");
-            addError("Server upload timeout");
-            client.stop();
-
-            Serial.print("Uploading: ");
-            Serial.println(filepath);
-
-            Serial.print("Size: ");
-            // Serial.println(file.size());
-            Serial.println(fileSize);
-
-            return false;
-        }
-    }
-
-    String response = "";
-
-    while (client.available())
-    {
-        response += client.readString();
-    }
-
-    client.stop();
-
-    Serial.println("Server response:");
-    Serial.println(response);
-
-    bool success =
-        response.indexOf("200 OK") >= 0 ||
-        response.indexOf("201 Created") >= 0;
-
-    if (success)
-    {
-        Serial.print("Deleting uploaded file: ");
-        Serial.println(filepath);
-
-        if (SD.remove(filepath))
-        {
-            Serial.println("Deleted successfully");
-        }
-        else
-        {
-            Serial.println("Delete failed");
-        }
-    }
-
-    return success;
-}
-
 // =============================================================
-// UPLOAD PENDING FILES
+// AWS: SEND CSV ROWS TO THE ADEMNEA PLATFORM (AWS) AS JSON
 // =============================================================
 
-void uploadPendingFiles()
+// UTC offset of the CSV timestamps, e.g. "+03:00" (they are written in local time).
+String csvUtcOffset()
 {
-    if (!sd_ok)
-        return;
+    long offset = gmtOffset_sec + daylightOffset_sec;
+    long absOffset = labs(offset);
+    char buf[8];
+    snprintf(buf, sizeof(buf), "%c%02ld:%02ld",
+             offset < 0 ? '-' : '+', absOffset / 3600, (absOffset % 3600) / 60);
+    return String(buf);
+}
 
-    if (WiFi.status() != WL_CONNECTED)
-        return;
+// Parses one row written by logToCSV():
+//   "2026-09-24 13:00:00","34.90*2*2","58.20*2*2","812",2.00,2
+// Returns false for blank rows and rows written before the clock was synced.
+bool parseCsvRow(const String &line, String &atIso, float &tempValue, float &humidityValue, int &co2Value)
+{
+    String fields[6];
+    int count = 0;
+    int start = 0;
 
-    File root = SD.open("/");
-
-    if (!root)
-        return;
-
-    File file = root.openNextFile();
-
-    while (file)
+    for (int i = 0; i <= (int)line.length() && count < 6; i++)
     {
-        String filename = file.name();
-        Serial.print("Found file: ");
-        Serial.println(filename);
-        bool upload = false;
-
-        if (filename == hiveNo + ".csv")
+        if (i == (int)line.length() || line[i] == ',')
         {
-            String apiKey = "7747ea95-9682-42a7-b0aa-44eb374b4300";
-
-            String hiveName = hiveNo;
-            hiveName.replace("_", " ");
-
-            String hiveNameEncoded = hiveName;
-            hiveNameEncoded.replace(" ", "%20");
-
-            String path =
-                "/conditions/hives/" +
-                hiveNameEncoded +
-                "/upload";
-
-            //--------------------------------------------------
-            // Open CSV file from SD
-            //--------------------------------------------------
-            File csvFile = SD.open("/" + hiveNo + ".csv", FILE_READ);
-
-            if (!csvFile)
-            {
-                Serial.println("Failed to open CSV file");
-                continue;
-            }
-
-            //--------------------------------------------------
-            // Generate timestamp filename
-            //--------------------------------------------------
-            struct tm timeinfo;
-
-            if (!getLocalTime(&timeinfo))
-            {
-                Serial.println("Failed to obtain time");
-                csvFile.close();
-                continue;
-            }
-
-            char uploadFilename[80];
-
-            snprintf(
-                uploadFilename,
-                sizeof(uploadFilename),
-                "%s_%04d_%02d_%02d_%02d%02d%02d.csv",
-                hiveNo.c_str(),
-                timeinfo.tm_year + 1900,
-                timeinfo.tm_mon + 1,
-                timeinfo.tm_mday,
-                timeinfo.tm_hour,
-                timeinfo.tm_min,
-                timeinfo.tm_sec);
-
-            Serial.print("SD filename: ");
-            Serial.println(hiveNo + ".csv");
-
-            Serial.print("Upload filename: ");
-            Serial.println(uploadFilename);
-
-            //--------------------------------------------------
-            // Multipart setup
-            //--------------------------------------------------
-            String boundary = "----ESP32Boundary12345";
-
-            String multipartHeader =
-                "--" + boundary + "\r\n"
-                                  "Content-Disposition: form-data; name=\"file\"; filename=\"" +
-                String(uploadFilename) +
-                "\"\r\n"
-                "Content-Type: text/csv\r\n\r\n";
-
-            String multipartFooter =
-                "\r\n--" + boundary + "--\r\n";
-
-            size_t contentLength =
-                multipartHeader.length() +
-                csvFile.size() +
-                multipartFooter.length();
-
-            //--------------------------------------------------
-            // HTTPS connection
-            //--------------------------------------------------
-            WiFiClientSecure client;
-            client.setInsecure();
-
-            Serial.println("Connecting to server...");
-
-            if (!client.connect("swarming.ademneaproject.net", 443))
-            {
-                Serial.println("Connection failed");
-                csvFile.close();
-                continue;
-            }
-
-            Serial.println("Connected");
-
-            //--------------------------------------------------
-            // HTTP request
-            //--------------------------------------------------
-            client.print("POST ");
-            client.print(path);
-            client.println(" HTTP/1.1");
-
-            client.println("Host: swarming.ademneaproject.net");
-            client.println("Accept: application/json");
-            client.println("x-api-key: " + apiKey);
-            client.println("Content-Type: multipart/form-data; boundary=" + boundary);
-            client.println("Content-Length: " + String(contentLength));
-            client.println("Connection: close");
-            client.println();
-
-            //--------------------------------------------------
-            // Multipart header
-            //--------------------------------------------------
-            client.print(multipartHeader);
-
-            //--------------------------------------------------
-            // Stream CSV
-            //--------------------------------------------------
-            uint8_t buffer[1024];
-
-            size_t totalSent = 0;
-
-            while (csvFile.available())
-            {
-                server.handleClient();
-                yield();
-                size_t len = csvFile.read(buffer, sizeof(buffer));
-
-                if (len > 0)
-                {
-                    size_t written = client.write(buffer, len);
-                    totalSent += written;
-                }
-            }
-
-            csvFile.close();
-
-            //--------------------------------------------------
-            // Multipart footer
-            //--------------------------------------------------
-            client.print(multipartFooter);
-
-            Serial.print("CSV bytes uploaded: ");
-            Serial.println(totalSent);
-
-            Serial.println("Upload sent");
-            Serial.println("Waiting for response...");
-
-            //--------------------------------------------------
-            // Wait for response
-            //--------------------------------------------------
-            unsigned long start = millis();
-
-            while (!client.available())
-            {
-                server.handleClient();
-                yield();
-                if (millis() - start > 15000)
-                {
-                    Serial.println("Response timeout");
-                    client.stop();
-                    break;
-                }
-
-                delay(10);
-            }
-
-            //--------------------------------------------------
-            // Print response
-            //--------------------------------------------------
-            Serial.println("===== SERVER RESPONSE =====");
-
-            while (client.available())
-            {
-                String line = client.readStringUntil('\n');
-                Serial.println(line);
-            }
-
-            Serial.println("===========================");
-
-            client.stop();
-
-            upload = true;
+            fields[count] = line.substring(start, i);
+            fields[count].replace("\"", "");
+            fields[count].trim();
+            count++;
+            start = i + 1;
         }
-        else if (
-            filename.startsWith(hiveNo + "_") &&
-            filename.endsWith(".wav"))
-        {
-            String apiKey = "7747ea95-9682-42a7-b0aa-44eb374b4300";
-
-            //--------------------------------------------------
-            // Generate hive name for endpoint
-            //--------------------------------------------------
-            String hiveName = hiveNo;
-            hiveName.replace("_", " "); // Hive_01 -> Hive 01
-
-            String hiveNameEncoded = hiveName;
-            hiveNameEncoded.replace(" ", "%20");
-
-            String path =
-                "/recordings/hives/" +
-                hiveNameEncoded +
-                "/upload";
-
-            //--------------------------------------------------
-            // Generate timestamp filename
-            //--------------------------------------------------
-            struct tm timeinfo;
-
-            if (!getLocalTime(&timeinfo))
-            {
-                Serial.println("Failed to obtain time");
-                continue;
-            }
-
-            char uploadFilename[80];
-
-            snprintf(
-                uploadFilename,
-                sizeof(uploadFilename),
-                "%s_%04d_%02d_%02d_%02d%02d%02d.wav",
-                hiveNo.c_str(),
-                timeinfo.tm_year + 1900,
-                timeinfo.tm_mon + 1,
-                timeinfo.tm_mday,
-                timeinfo.tm_hour,
-                timeinfo.tm_min,
-                timeinfo.tm_sec);
-
-            Serial.println("\n=================================");
-            Serial.println("STARTING WAV UPLOAD");
-            Serial.println("=================================");
-
-            Serial.print("SD File: ");
-            Serial.println(filename);
-
-            Serial.print("Upload Name: ");
-            Serial.println(uploadFilename);
-
-            //--------------------------------------------------
-            // Open WAV file
-            //--------------------------------------------------
-            File wavFile = SD.open("/" + filename, FILE_READ);
-
-            if (!wavFile)
-            {
-                Serial.println("Failed to open WAV file");
-                continue;
-            }
-
-            //--------------------------------------------------
-            // Multipart setup
-            //--------------------------------------------------
-            String boundary = "----ESP32Boundary12345";
-
-            String multipartHeader =
-                "--" + boundary + "\r\n"
-                                  "Content-Disposition: form-data; name=\"file\"; filename=\"" +
-                String(uploadFilename) +
-                "\"\r\n"
-                "Content-Type: audio/wav\r\n\r\n";
-
-            String multipartFooter =
-                "\r\n--" + boundary + "--\r\n";
-
-            size_t contentLength =
-                multipartHeader.length() +
-                wavFile.size() +
-                multipartFooter.length();
-
-            Serial.print("WAV Size: ");
-            Serial.println(wavFile.size());
-
-            Serial.print("Request Size: ");
-            Serial.println(contentLength);
-
-            //--------------------------------------------------
-            // HTTPS Connection
-            //--------------------------------------------------
-            WiFiClientSecure client;
-            client.setInsecure();
-
-            Serial.println("Connecting to server...");
-
-            if (!client.connect("swarming.ademneaproject.net", 443))
-            {
-                Serial.println("Connection failed");
-                wavFile.close();
-                continue;
-            }
-
-            Serial.println("Connected");
-
-            //--------------------------------------------------
-            // HTTP Request
-            //--------------------------------------------------
-            client.print("POST ");
-            client.print(path);
-            client.println(" HTTP/1.1");
-
-            client.println("Host: swarming.ademneaproject.net");
-            client.println("Accept: application/json");
-            client.println("x-api-key: " + apiKey);
-            client.println(
-                "Content-Type: multipart/form-data; boundary=" + boundary);
-            client.println("Content-Length: " + String(contentLength));
-            client.println("Connection: close");
-            client.println();
-
-            //--------------------------------------------------
-            // Multipart Header
-            //--------------------------------------------------
-            client.print(multipartHeader);
-
-            //--------------------------------------------------
-            // Stream WAV File
-            //--------------------------------------------------
-            uint8_t buffer[2048];
-
-            size_t totalSent = 0;
-
-            while (wavFile.available())
-            {
-                server.handleClient();
-                yield();
-                size_t bytesRead =
-                    wavFile.read(buffer, sizeof(buffer));
-
-                if (bytesRead > 0)
-                {
-                    size_t bytesWritten =
-                        client.write(buffer, bytesRead);
-
-                    totalSent += bytesWritten;
-
-                    if (totalSent % 32768 < bytesRead)
-                    {
-                        Serial.print("Uploaded ");
-                        Serial.print(totalSent);
-                        Serial.print(" / ");
-                        Serial.println(wavFile.size());
-                    }
-                }
-            }
-
-            wavFile.close();
-
-            //--------------------------------------------------
-            // Multipart Footer
-            //--------------------------------------------------
-            client.print(multipartFooter);
-
-            Serial.println("Upload complete.");
-            Serial.println("Waiting for response...");
-
-            //--------------------------------------------------
-            // Wait for response
-            //--------------------------------------------------
-            unsigned long start = millis();
-
-            while (!client.available())
-            {
-                server.handleClient();
-                yield();
-                if (millis() - start > 30000)
-                {
-                    Serial.println("Response timeout");
-                    client.stop();
-                    break;
-                }
-
-                delay(10);
-            }
-
-            //--------------------------------------------------
-            // Print response
-            //--------------------------------------------------
-            Serial.println("\n===== SERVER RESPONSE =====");
-
-            while (client.available())
-            {
-                String line = client.readStringUntil('\n');
-                Serial.println(line);
-            }
-
-            Serial.println("===========================");
-
-            client.stop();
-
-            upload = true;
-        }
-
-        if (upload)
-        {
-            Serial.println();
-            Serial.print("Uploading: ");
-            Serial.println(filename);
-
-            uploadFileToServer(filename);
-        }
-
-        file.close();
-        file = root.openNextFile();
     }
 
-    root.close();
+    if (count < 4 || fields[0].length() != 19 || fields[0].startsWith("0000"))
+        return false;
+
+    atIso = fields[0];          // "2026-09-24 13:00:00"
+    atIso.replace(" ", "T");    // "2026-09-24T13:00:00"
+    atIso += csvUtcOffset();    // "2026-09-24T13:00:00+03:00"
+
+    tempValue = fields[1].toFloat();     // "34.90*2*2" -> 34.90 (stops at '*')
+    humidityValue = fields[2].toFloat();
+    co2Value = fields[3].toInt();
+    return true;
 }
+
+// Sends every row of <hiveNo>.csv to AWS: one JSON message per sensor type,
+// with this board's key in the X-Api-Key header, over verified HTTPS.
+// Stops at the first network/auth failure and keeps the file, so the rows are
+// retried next window (re-sent rows are safe: the server ignores duplicates).
+// When everything went through and deleteWhenDone is true, the CSV is deleted.
+bool uploadCsvToAws(bool deleteWhenDone)
+{
+    String path = "/" + hiveNo + ".csv";
+
+    if (!sd_ok || WiFi.status() != WL_CONNECTED || !SD.exists(path))
+        return false;
+
+    File csv = SD.open(path, FILE_READ);
+
+    if (!csv)
+        return false;
+
+    WiFiClientSecure tls;
+    tls.setCACert(AWS_ROOT_CA); // verify it really is AWS (no setInsecure)
+
+    HTTPClient http;
+    http.setReuse(true); // one HTTPS connection for all rows
+    http.setTimeout(10000);
+
+    int rowsSent = 0;
+    bool ok = true;
+
+    Serial.println("===== SENDING CSV TO AWS =====");
+
+    while (ok && csv.available())
+    {
+        String line = csv.readStringUntil('\n');
+        line.trim();
+
+        String at;
+        float rowTemp, rowHumidity;
+        int rowCo2;
+
+        if (!parseCsvRow(line, at, rowTemp, rowHumidity, rowCo2))
+            continue;
+
+        String messages[3] = {
+            "{\"sensor_type\":\"temperature\",\"recorded_at\":\"" + at +
+                "\",\"reading\":{\"brood_section\":" + String(rowTemp, 2) + "}}",
+            "{\"sensor_type\":\"humidity\",\"recorded_at\":\"" + at +
+                "\",\"reading\":{\"brood_section\":" + String(rowHumidity, 2) + "}}",
+            "{\"sensor_type\":\"co2\",\"recorded_at\":\"" + at +
+                "\",\"reading\":{\"co2_level\":" + String(rowCo2) + "}}",
+        };
+
+        for (int i = 0; i < 3; i++)
+        {
+            http.begin(tls, String(AWS_API_BASE) + "/ingest");
+            http.addHeader("Content-Type", "application/json");
+            http.addHeader("X-Api-Key", AWS_DEVICE_KEY);
+
+            int code = http.POST(messages[i]);
+            http.end();
+
+            server.handleClient(); // keep the local dashboard responsive
+            yield();
+
+            if (code == 202)
+                continue; // queued in AWS
+
+            if (code == 400)
+            {
+                Serial.println("AWS rejected malformed row, skipped: " + messages[i]);
+                continue; // retrying would fail the same way
+            }
+
+            addError("AWS upload failed: HTTP " + String(code));
+            ok = false; // no network / key missing / throttled — retry next window
+            break;
+        }
+
+        if (ok)
+            rowsSent++;
+    }
+
+    csv.close();
+
+    Serial.printf("AWS: %d CSV rows sent%s\n", rowsSent, ok ? "" : " (stopped early, will retry)");
+
+    if (ok && deleteWhenDone)
+    {
+        SD.remove(path);
+        Serial.println("AWS: CSV cleared after successful upload");
+    }
+
+    Serial.println("=============================");
+
+    return ok;
+}
+
 // ======================================================
 // ENSURE 11.CSV EXISTS
 // ======================================================
@@ -1378,7 +978,7 @@ void setup()
 
     Serial.println();
     Serial.println("================================");
-    Serial.println("WIFI AUDIO LOGGER + THINGSPEAK");
+    Serial.println("WIFI AUDIO LOGGER + THINGSPEAK + AWS");
     Serial.println("5 FIELDS: Temp, Humidity, CO2, Battery, Audio");
     Serial.println("Sending sensor data EVERY 15 SECONDS");
     Serial.println("Recording audio: 10 seconds every 30 seconds");
@@ -1486,6 +1086,7 @@ void setup()
     Serial.println();
     Serial.println("SYSTEM READY");
     Serial.println("📊 Sensor data sent to ThingSpeak EVERY 15 seconds");
+    Serial.println("☁️ Sensor data (CSV rows) sent to AdEMNEA on AWS every upload window");
     Serial.println("🎤 Audio recorded for 10 seconds EVERY 30 seconds");
     Serial.println("📁 Audio files saved to SD card (not sent to cloud)");
     Serial.println("   Fields: Temp | Humidity | CO2 | Battery | Audio Peak");
@@ -1540,7 +1141,9 @@ void dutyCycleLoop()
                 co2,
                 batteryVoltage,
                 audioPeak);
-            uploadPendingFiles();
+
+            // AWS: send the CSV rows; the file is cleared once all have arrived.
+            uploadCsvToAws(true);
 
             disconnectSTA();
         }
@@ -1648,14 +1251,15 @@ void normalLoop()
 
     if (millis() - lastUploadTime >= uploadInterval)
     {
-        Serial.println("===== STARTING FILE UPLOAD =====");
+        Serial.println("===== STARTING AWS UPLOAD =====");
         if (connectSTA())
         {
-            uploadPendingFiles();
+            // AWS: send the CSV rows; the file is cleared once all have arrived.
+            uploadCsvToAws(true);
 
             disconnectSTA();
         }
-        Serial.println("===== FILE UPLOAD COMPLETE =====");
+        Serial.println("===== AWS UPLOAD COMPLETE =====");
         lastUploadTime = millis();
     }
 
