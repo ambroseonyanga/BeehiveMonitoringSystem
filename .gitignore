@@ -37,3 +37,165 @@ __pycache__/
 # Backup files
 *~
 *.bak
+# ============================================================================
+#  Beehive Prototype — .gitignore
+# ============================================================================
+
+# ----------------------------------------------------------------------------
+#  SECRETS — never commit
+#  WiFi credentials, API keys, device IDs. Even if the repo is private,
+#  a leaked key is a leaked key. The example file (secrets.example.h) IS
+#  committed so other developers know what to fill in.
+# ----------------------------------------------------------------------------
+secrets.h
+include/secrets.h
+src/secrets.h
+*.key
+*.pem
+*.p12
+*.jks
+
+# ----------------------------------------------------------------------------
+#  PLATFORMIO
+#  Everything PIO generates or downloads. Safe to delete; PIO regenerates
+#  on the next build. Massive (100s of MB) if committed.
+# ----------------------------------------------------------------------------
+.pio/
+.pioenvs/
+.piolibdeps/
+.pio/
+.pio/libdeps/
+.pio/build/
+
+# ----------------------------------------------------------------------------
+#  VS CODE / CURSOR / OTHER EDITORS
+#  Personal settings, debug configs, workspace files. Should not be shared.
+# ----------------------------------------------------------------------------
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json.example
+.idea/
+*.code-workspace
+*.swp
+*.swo
+*~
+
+# ----------------------------------------------------------------------------
+#  C / C++ BUILD ARTIFACTS
+#  Anything the compiler produces. If these leak into a commit, they cause
+#  merge conflicts and confuse `git status`.
+# ----------------------------------------------------------------------------
+*.o
+*.obj
+*.elf
+*.bin
+*.hex
+*.map
+*.lst
+*.su
+*.d
+*.gcno
+*.gcda
+*.gcov
+
+# ----------------------------------------------------------------------------
+#  ARDUINO / ESP-IDF
+#  Build caches and intermediate files from the toolchain.
+# ----------------------------------------------------------------------------
+.pio/libdeps/*
+.pio/.sconsign.dblite
+build/
+sdkconfig
+sdkconfig.old
+sdkconfig.defaults.bak
+managed_components/
+
+# ----------------------------------------------------------------------------
+#  OPERATING SYSTEM
+#  Whatever OS you're on, these files should never leave your machine.
+# ----------------------------------------------------------------------------
+# macOS
+.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+.fseventsd
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# Linux
+*~
+.directory
+.Trash-*
+.nfs*
+
+# ----------------------------------------------------------------------------
+#  LOGS AND CAPTURES
+#  Serial monitor output, debug logs, Wireshark captures.
+# ----------------------------------------------------------------------------
+*.log
+*.log.*
+*.txt.log
+serial_output*.txt
+pio_device_monitor*.txt
+monitor*.txt
+*.pcap
+*.pcapng
+
+# ----------------------------------------------------------------------------
+#  LOCAL TEST DATA
+#  CSV captures, WAV recordings pulled off the SD card for analysis.
+#  Not source code. Keep them out of the repo.
+# ----------------------------------------------------------------------------
+*.wav
+*.mp3
+*.csv
+!data/sample.csv
+test_data/
+captures/
+recordings/
+
+# ----------------------------------------------------------------------------
+
+#  DEPENDENCY MANAGERS
+
+#  Node, Python virtualenvs, pip caches — sometimes present if scripts
+
+#  live alongside the firmware.
+# ----------------------------------------------------------------------------
+node_modules/
+
+__pycache__/
+
+*.py[cod]
+*$py.class
+
+.venv/
+
+venv/
+
+env/
+
+ENV/
+.python-version
+
+
+# ----------------------------------------------------------------------------
+
+#  MISC
+# ----------------------------------------------------------------------------
+*.bak
+
+*.tmp
+
+*.temp
+*.orig
+*.rej
+.cache/
+
+tmp/

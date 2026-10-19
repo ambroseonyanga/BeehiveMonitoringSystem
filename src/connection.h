@@ -3,11 +3,11 @@
 
 #include <WiFi.h>
 
-void connectWiFi();
+// void connectWiFi();
 void startAP();
 bool connectSTA();
 void disconnectSTA();
-void checkWiFiConnection();
+// void checkWiFiConnection();
 void setupTime();
 String getTimestamp();
 
